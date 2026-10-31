@@ -24,13 +24,12 @@ Rules of thumb
 
 ## Who works where
 
-| Part | Code | Notebook |
-
-|---|---|---|
-| Data and evaluation | `src/data.py`, `src/evaluate.py` | `notebooks/01_data.ipynb` |
-| MinHash-LSH | `src/minhash.py` | `notebooks/02_lsh.ipynb` |
-| Embeddings and HNSW | `src/embeddings.py` | `notebooks/03_embeddings.ipynb` |
-| Graph and clustering | `src/graph.py` | `notebooks/04_graph.ipynb` |
+| Part                 | Code                             | Notebook                        |
+| -------------------- | -------------------------------- | ------------------------------- |
+| Data and evaluation  | `src/data.py`, `src/evaluate.py` | `notebooks/01_data.ipynb`       |
+| MinHash-LSH          | `src/minhash.py`                 | `notebooks/02_lsh.ipynb`        |
+| Embeddings and HNSW  | `src/embeddings.py`              | `notebooks/03_embeddings.ipynb` |
+| Graph and clustering | `src/graph.py`                   | `notebooks/04_graph.ipynb`      |
 
 ## Setup
 
