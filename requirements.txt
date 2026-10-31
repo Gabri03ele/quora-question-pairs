@@ -1,0 +1,17 @@
+# P1: data and evaluation
+pandas
+numpy
+pyarrow
+scikit-learn
+matplotlib
+jupyter
+
+# P2: MinHash-LSH (validation only)
+# datasketch
+
+# P3: embeddings and HNSW
+# sentence-transformers
+# faiss-cpu
+
+# P4: graph and clustering
+# networkx
