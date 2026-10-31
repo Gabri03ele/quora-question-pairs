@@ -38,4 +38,4 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Download `train.csv` from the Kaggle competition "Quora Question Pairs" (log in and accept the rules) and put it in `data/raw/`.
+Download `questions.csv` from the Kaggle dataset [Question Pairs Dataset](https://www.kaggle.com/datasets/quora/question-pairs-dataset) and put it in `data/raw/`.
