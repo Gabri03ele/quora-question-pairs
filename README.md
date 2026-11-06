@@ -38,4 +38,84 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Download `questions.csv` from the Kaggle dataset [Question Pairs Dataset](https://www.kaggle.com/datasets/quora/question-pairs-dataset) and put it in `data/raw/`.
+Download `questions.csv` from the Kaggle dataset [Question Pairs Dataset](https://www.kaggle.com/datasets/quora/question-pairs-dataset) and put it in `data/raw/` (not shared in the repository).
+
+## Data
+
+`notebooks/01_data.ipynb` builds every file in `data/processed/` from the raw file.
+
+### Files
+
+| File                         | Rows    | Content                              |
+| ---------------------------- | ------- | ------------------------------------ |
+| `questions.parquet`          | 537,174 | one row per distinct question        |
+| `pairs.parquet`              | 403,772 | one row per clean labelled pair      |
+| `questions_sample10.parquet` | 53,721  | 10% sample of the questions          |
+| `pairs_sample10.parquet`     | 43,417  | the labelled pairs inside the sample |
+
+### Columns
+
+`questions`
+
+- `qid`: our question id (the Kaggle ids are unreliable and not used)
+- `text_norm`: question text after light normalisation (NFKC, lower case, whitespace collapsed). Any further cleaning is done in each method.
+- `group_id`: ground-truth duplicate group. Questions with the same `group_id` are duplicates.
+- `split`: `dev` or `test`
+
+`pairs`
+
+- `qid1`, `qid2`: the two questions, with `qid1 < qid2`
+- `conflicting_pair`: labelled 0, but both questions are in the same duplicate group
+- `split`: `dev` or `test`
+- `is_duplicate`: target label, 1 or 0
+
+### Rules for everyone
+
+- Use the `split` column if split is needed, never a split of your own. Connected components of pairs are on one side, so no question is in both dev and test.
+- Tune everything on `dev`. `test` is used once, for the final numbers in the report.
+- Searches (LSH, HNSW) run over all questions, including test ones.
+- The sample is for testing code. All reported numbers come from the full data.
+
+### Loading
+
+```python
+import pandas as pd
+questions = pd.read_parquet("data/processed/questions.parquet")
+pairs = pd.read_parquet("data/processed/pairs.parquet")
+dev_pairs = pairs[pairs["split"] == "dev"]
+```
+
+## Evaluation
+
+`src/evaluate.py` scores the output of any method the same way.
+
+### Candidate format
+
+Every method returns a pandas DataFrame with one row per pair it thinks may be a duplicate:
+
+| Column           | Type  | Meaning                                                       |
+| ---------------- | ----- | ------------------------------------------------------------- |
+| `qid_a`, `qid_b` | int   | the two questions (any order)                                 |
+| `score`          | float | similarity (estimated Jaccard for LSH, cosine for embeddings) |
+| `source`         | str   | `lsh` or `emb`                                                |
+
+`evaluate` only uses `qid_a` and `qid_b`. `score` and `source` are needed to build the graph. Order, repeated pairs and self-pairs are handled inside. Clusters must be turned into pairs (every two questions in the same cluster) before evaluating.
+
+### Usage
+
+```python
+import sys
+sys.path.append("..")          # only when running from notebooks/
+from src.evaluate import evaluate, recall_by_jaccard_bin
+
+results = evaluate(candidates, pairs, questions, split="dev")
+bins = recall_by_jaccard_bin(candidates, pairs, questions, split="dev")
+```
+
+`evaluate` returns a dictionary: `n_candidates`, `fraction_of_all_pairs`, `labelled_candidates`, `recall`, `precision`, `f1`, `recall_implied`.
+
+- `recall`, `precision`, `f1` are computed on labelled pairs only. Precision ignores unlabelled candidates.
+- `recall_implied` counts all duplicate pairs implied by the groups, labelled or not.
+- `recall_by_jaccard_bin` gives recall for duplicates that share few or many words.
+
+Use `split="dev"` while working. `split="test"` is used once, for the final numbers.
