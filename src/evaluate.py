@@ -37,6 +37,14 @@ def recall_by_jaccard_bin(candidates, pairs, questions, split="dev", bins=(0, 0.
 
 def sort_candidates(candidates):
     """smaller qid first"""
+    # LSH output is already ordered and unique: avoid rebuilding a large pair table.
+    if candidates.attrs.get("sorted_unique_pairs") and {"qid_a", "qid_b"}.issubset(
+        candidates.columns
+    ):
+        return candidates.rename(columns={"qid_a": "qid1", "qid_b": "qid2"})[
+            ["qid1", "qid2"]
+        ]
+
     sorted_candidates = pd.DataFrame({
         "qid1": candidates[["qid_a", "qid_b"]].min(axis=1),
         "qid2": candidates[["qid_a", "qid_b"]].max(axis=1),
