@@ -119,3 +119,22 @@ bins = recall_by_jaccard_bin(candidates, pairs, questions, split="dev")
 - `recall_by_jaccard_bin` gives recall for duplicates that share few or many words.
 
 Use `split="dev"` while working. `split="test"` is used once, for the final numbers.
+
+## P2: MinHash-LSH
+
+In P2, we used MinHash-LSH to find likely duplicate-question pairs without
+comparing every possible pair directly. We tested several combinations of
+bands and rows, and selected `(bands=16, rows=6)` as the best configuration
+on the development set with 96 hash functions.
+
+This configuration generated 26,906,047 candidate pairs, only `0.0186%` of
+all possible question pairs. It achieved 30.6% recall and 52.2% precision on
+the labelled pairs, for an F1 score of 38.6%. The implied recall, which also
+accounts for duplicate pairs not present in the labelled data, was 20.9%.
+The run took about 6 minutes.
+
+The result is useful as a scalable first-stage filter: it reduces the search
+space dramatically while retaining a meaningful share of duplicates. However,
+the moderate recall means that LSH alone is not sufficient for the final
+duplicate-detection goal, which is why the later stages use embeddings and
+graph clustering to recover additional paraphrases.
