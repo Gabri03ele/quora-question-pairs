@@ -122,19 +122,17 @@ Use `split="dev"` while working. `split="test"` is used once, for the final numb
 
 ## P2: MinHash-LSH
 
-In P2, we used MinHash-LSH to find likely duplicate-question pairs without
-comparing every possible pair directly. We tested several combinations of
-bands and rows, and selected `(bands=16, rows=6)` as the best configuration
-on the development set with 96 hash functions.
+MinHash-LSH finds likely duplicate pairs without comparing every pair of questions. Each question is represented as its set of words, and each set is summarised by a signature of **96 MinHash values**. The signature is split into bands, and two questions become a candidate pair if all values in at least one band match.
 
-This configuration generated 26,906,047 candidate pairs, only `0.0186%` of
-all possible question pairs. It achieved 30.6% recall and 52.2% precision on
-the labelled pairs, for an F1 score of 38.6%. The implied recall, which also
-accounts for duplicate pairs not present in the labelled data, was 20.9%.
-The run took about 6 minutes.
+We compared four settings of bands and rows (6×16, 8×12, 12×8 and 16×6) on the dev split. We chose **16 bands of 6 rows** because it gave the highest F1. Word pairs (q=2) gave a lower F1 than single words with the same setting (17.1% against 38.6% on dev), so we kept single words.
 
-The result is useful as a scalable first-stage filter: it reduces the search
-space dramatically while retaining a meaningful share of duplicates. However,
-the moderate recall means that LSH alone is not sufficient for the final
-duplicate-detection goal, which is why the later stages use embeddings and
-graph clustering to recover additional paraphrases.
+On the **test split**, the chosen setting produced **26,906,047 candidate pairs**. That is **0.0186% of all possible pairs**. On the labelled test pairs it reached **28.6% recall** and **50.0% precision**, an **F1 of 36.4%**. Implied recall, which also counts duplicate pairs that have no label, was **18.9%**. Precision is measured only on the 17,089 candidates that have a test label, so the precision of the full candidate set is unknown.
+
+Recall depends strongly on how many words the two questions share (test split):
+
+| Word Jaccard    | 0–0.2  | 0.2–0.4  | 0.4–0.6   | 0.6–0.8   | 0.8–1.0   |
+| --------------- | ------ | -------- | --------- | --------- | --------- |
+| Duplicate pairs | 2,726  | 11,274   | 8,709     | 5,137     | 1,996     |
+| Recall          | **0%** | **1.9%** | **23.4%** | **83.6%** | **99.9%** |
+
+LSH therefore finds near-copies but misses most paraphrases. It works well as a cheap first filter, but it is not enough on its own, which is why the next stages use embeddings and graph clustering.

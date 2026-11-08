@@ -5,6 +5,7 @@ TODO: evaluate(candidates, truth) with pair precision/recall/F1, cluster metrics
 
 from pathlib import Path
 import pandas as pd
+import numpy as np
 import re
 
 def word_jaccard(text1, text2):
@@ -36,24 +37,18 @@ def recall_by_jaccard_bin(candidates, pairs, questions, split="dev", bins=(0, 0.
     return result
 
 def sort_candidates(candidates):
-    """smaller qid first"""
-    # LSH output is already ordered and unique: avoid rebuilding a large pair table.
-    if candidates.attrs.get("sorted_unique_pairs") and {"qid_a", "qid_b"}.issubset(
-        candidates.columns
-    ):
-        return candidates.rename(columns={"qid_a": "qid1", "qid_b": "qid2"})[
-            ["qid1", "qid2"]
-        ]
+    """Smaller qid first, self-pairs and repeated pairs removed"""
+    a = candidates["qid_a"].to_numpy()
+    b = candidates["qid_b"].to_numpy()
 
-    sorted_candidates = pd.DataFrame({
-        "qid1": candidates[["qid_a", "qid_b"]].min(axis=1),
-        "qid2": candidates[["qid_a", "qid_b"]].max(axis=1),
-    })
+    qid1 = np.minimum(a, b)
+    qid2 = np.maximum(a, b)
 
-    sorted_candidates = sorted_candidates[sorted_candidates["qid1"] != sorted_candidates["qid2"]]
-    sorted_candidates = sorted_candidates.drop_duplicates().reset_index(drop=True)
+    keep = qid1 != qid2 #no self-pair
 
-    return sorted_candidates
+    sorted_candidates = pd.DataFrame({"qid1": qid1[keep], "qid2": qid2[keep]})
+
+    return sorted_candidates.drop_duplicates(ignore_index=True)
 
 def labelled_metrics(candidates, pairs, split):
     """Recall, precision and F1 on the labelled pairs of one split."""
