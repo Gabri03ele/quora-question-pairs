@@ -11,7 +11,7 @@ jupyter
 
 # P3: embeddings and HNSW
 sentence-transformers
-faiss-gpu
+faiss-cpu
 
 # P4: graph and clustering
 # networkx
