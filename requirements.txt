@@ -10,8 +10,8 @@ jupyter
 # datasketch
 
 # P3: embeddings and HNSW
-# sentence-transformers
-# faiss-cpu
+sentence-transformers
+faiss-cpu
 
 # P4: graph and clustering
 # networkx
