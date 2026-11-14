@@ -136,3 +136,7 @@ Recall depends strongly on how many words the two questions share (test split):
 | Recall          | **0%** | **1.9%** | **23.4%** | **83.6%** | **99.9%** |
 
 LSH therefore finds near-copies but misses most paraphrases. It works well as a cheap first filter, but it is not enough on its own, which is why the next stages use embeddings and graph clustering.
+
+### P3 — Embeddings + HNSW
+
+Encodes every normalised question with the sentence-transformers model `all-MiniLM-L6-v2` (384-dim, L2-normalised, cached in `data/processed/embeddings.npy`, not tracked by git) and indexes them with a FAISS HNSW index (M=32, inner product = cosine similarity). Each question retrieves its top-20 neighbours. `efSearch=64` was chosen by comparing against exact search on 2,000 random queries. The similarity threshold (0.75) was chosen by best F1 on the **dev** split. Output: `data/processed/emb_candidates.parquet` (~1.42M pairs, columns `qid_a < qid_b`, `score`, `source="emb"`). On the **test** split it reaches recall 0.81, precision 0.63, F1 0.71 (LSH: 0.29 / 0.50 / 0.36), and it recovers duplicates with low word overlap that LSH misses.

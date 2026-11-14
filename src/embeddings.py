@@ -2,114 +2,116 @@
 
 TODO: encode questions, cache embeddings to disk, FAISS HNSW index, neighbour search, check against exact search.
 """
-# -*- coding: utf-8 -*-
 
+"""Sentence embeddings + HNSW candidate generation (owner: P3)."""
 
-import pandas as pd
-from sentence_transformers import SentenceTransformer, InputExample, losses
-import numpy as np
-import faiss
-from torch.utils.data import DataLoader
+import os
+import sys
 import time
-from scipy.spatial.distance import cdist
+import faiss
+import numpy as np
+import pandas as pd
+import torch
+from sentence_transformers import SentenceTransformer
 
-df = pd.read_parquet('/content/quora-question-pairs/data/processed/questions.parquet')
-texts = df['text_norm'].fillna("").tolist()
-qids = df['qid'].tolist()
+from .evaluate import evaluate
 
-model = SentenceTransformer('all-MiniLM-L6-v2')
+def get_device():
+    """Use the GPU if there is one: mps (Mac) or cuda (NVIDIA), otherwise cpu."""
+    if torch.backends.mps.is_available():
+        return 'mps'
+    if torch.cuda.is_available():
+        return 'cuda'
+    return 'cpu'
 
-embeddings = model.encode(texts, batch_size=256, show_progress_bar=True, normalize_embeddings=True)
+def load_or_compute_embeddings(texts, qids, emb_path, qid_path,
+                               model_name='all-MiniLM-L6-v2', batch_size=256):
+    #L2-normalised embeddings, one row per qid cached
+    # cache is reused only if it was computed for the same qids in the same order
+    
+    qids = np.asarray(qids)
+    if os.path.exists(emb_path) and os.path.exists(qid_path) \
+            and np.array_equal(np.load(qid_path), qids):
+        print('Loaded cached embeddings')
+        return np.load(emb_path)
 
-np.save('embeddings.npy', embeddings)
+    device = get_device()
+    print('Encoding on', device)
+    model = SentenceTransformer(model_name, device=device)
+    embeddings = model.encode(texts, batch_size=batch_size, show_progress_bar=True,
+                              normalize_embeddings=True)
+    np.save(emb_path, embeddings)
+    np.save(qid_path, qids)
+    return embeddings
 
-d = embeddings.shape[1]
-index_hnsw = faiss.IndexHNSWFlat(d, 32, faiss.METRIC_INNER_PRODUCT)
-index_hnsw.add(embeddings)
+def build_hnsw(embeddings, M=32):
+    #FAISS HNSW index on normalised vectors (inner product equals cosine)
+    index = faiss.IndexHNSWFlat(embeddings.shape[1], M, faiss.METRIC_INNER_PRODUCT)
+    t0 = time.time()
+    index.add(embeddings)
+    print(f'Index build time (M={M}): {time.time() - t0:.1f}s')
+    return index
 
-k = 20
-threshold = 0.80
 
-scores, indices = index_hnsw.search(embeddings, k)
+def recall_at_k(approx, exact):
+    """Share of the exact top-k neighbours that the approximate search also found."""
+    return np.mean([len(set(a) & set(e)) / len(e) for a, e in zip(approx, exact)])
 
-candidates = []
-for i in range(len(qids)):
-    for j in range(1, k):
-        score = float(scores[i][j])
-        if score >= threshold:
-            candidates.append({
-                'qid_a': qids[i],
-                'qid_b': qids[indices[i][j]],
-                'score': score,
-                'source': 'emb'
-            })
 
-df_candidates = pd.DataFrame(candidates)
-df_candidates.to_parquet('candidates_emb.parquet', index=False)
+def tune_ef_search(index, embeddings, k, ef_values=(16, 32, 64, 128, 256),
+                   sample_size=2000, repeats=1, seed=42):
+    """Recall@k and query time of HNSW vs exact search, for each efSearch value."""
+    rng = np.random.default_rng(seed)
+    queries = embeddings[rng.choice(len(embeddings), size=sample_size, replace=False)]
 
-sample_size = min(1000, len(embeddings))
-sample_queries = embeddings[:sample_size]
+    exact = faiss.IndexFlatIP(embeddings.shape[1])
+    exact.add(embeddings)
+    t0 = time.time()
+    _, exact_idx = exact.search(queries, k)
+    t_exact = time.time() - t0
 
-index_exact = faiss.IndexFlatIP(d)
-index_exact.add(embeddings)
+    index.search(queries[:100], k)   # warm-up
+    rows = []
+    for ef in ef_values:
+        index.hnsw.efSearch = ef
+        times = []
+        for _ in range(repeats):
+            t0 = time.time()
+            _, approx_idx = index.search(queries, k)
+            times.append(time.time() - t0)
+        t = float(np.median(times))
+        rows.append({'efSearch': ef, 'recall@k': recall_at_k(approx_idx, exact_idx),
+                     'time_s': t, 'speedup_vs_exact': t_exact / t})
+    return pd.DataFrame(rows)
 
-exact_scores, exact_indices = index_exact.search(sample_queries, k)
-hnsw_scores, hnsw_indices = index_hnsw.search(sample_queries, k)
+def build_candidates(scores, indices, qids, threshold):
+    qids = np.asarray(qids)
+    n, k = indices.shape
+    rows = np.repeat(np.arange(n), k)
+    cols = indices.ravel()
+    sc = scores.ravel()
 
-hits = 0
-for i in range(sample_size):
-    exact_set = set(exact_indices[i])
-    hnsw_set = set(hnsw_indices[i])
-    hits += len(exact_set.intersection(hnsw_set))
+    keep = (cols >= 0) & (cols != rows) & (sc >= threshold)
+    a, b = qids[rows[keep]], qids[cols[keep]]
 
-recall = hits / (sample_size * k)
-print(f"HNSW Recall: {recall:.4f}")
+    out = pd.DataFrame({
+        'qid_a': np.minimum(a, b), 'qid_b': np.maximum(a, b),
+        'score': sc[keep], 'source': 'emb'})
+    return out.drop_duplicates(['qid_a', 'qid_b']).reset_index(drop=True)
 
-"""## experimens
+def search_candidates(index, embeddings, qids, k, ef_search, threshold):
+    """Search every question's k nearest neighbours and return the candidate pairs."""
+    index.hnsw.efSearch = ef_search
+    index.search(embeddings[:100], k)   # warm-up
+    t0 = time.time()
+    scores, indices = index.search(embeddings, k)
+    print(f'Search time (efSearch={ef_search}): {time.time() - t0:.1f}s')
+    return build_candidates(scores, indices, qids, threshold)
 
-"""
-
-df_questions = pd.read_parquet('/content/quora-question-pairs/data/processed/questions.parquet')
-df_pairs = pd.read_parquet('/content/quora-question-pairs/data/processed/pairs.parquet')
-
-df_train = df_pairs[df_pairs['split'] == 'dev']
-
-qid_to_text = dict(zip(df_questions['qid'], df_questions['text_norm']))
-
-train_examples = []
-for _, row in df_train.iterrows():
-    text_a = qid_to_text.get(row['qid1'], "")
-    text_b = qid_to_text.get(row['qid2'], "")
-    label = float(row['is_duplicate'])
-    if text_a and text_b:
-        train_examples.append(InputExample(texts=[text_a, text_b], label=label))
-
-train_dataloader = DataLoader(train_examples, shuffle=True, batch_size=32)
-
-model = SentenceTransformer('all-MiniLM-L6-v2')
-train_loss = losses.ContrastiveLoss(model=model)
-
-model.fit(
-    train_objectives=[(train_dataloader, train_loss)],
-    epochs=1,
-    warmup_steps=100,
-    output_path='./finetuned-minilm'
-)
-
-class CustomGraphIndex:
-    def __init__(self, data):
-        self.data = data
-
-    def search(self, queries, k=20):
-        distances = 1 - cdist(queries, self.data, metric='cosine')
-        indices = np.argsort(-distances, axis=1)[:, :k]
-        scores = np.take_along_axis(distances, indices, axis=1)
-        return scores, indices
-
-custom_index = CustomGraphIndex(embeddings)
-
-start_time = time.time()
-custom_scores, custom_indices = custom_index.search(sample_queries, k)
-custom_time = time.time() - start_time
-
-print(f"Custom implementation search time: {custom_time:.4f} seconds")
+def tune_threshold(cands, pairs, questions, thresholds, split='dev'):
+    """Evaluate the candidates at each threshold on one split; returns the table and the best-F1 threshold."""
+    rows = [{'threshold': t, **evaluate(cands[cands['score'] >= t], pairs, questions, split=split)}
+            for t in thresholds]
+    table = pd.DataFrame(rows)
+    best_t = table.loc[table['f1'].idxmax(), 'threshold']
+    return table, best_t
