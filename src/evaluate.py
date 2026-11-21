@@ -10,8 +10,8 @@ import re
 
 def word_jaccard(text1, text2):
     """percentage of words the two questions have in common (punctuation ignored)"""
-    words1 = set(re.findall(r"\w", text1))
-    words2 = set(re.findall(r"\w", text2))
+    words1 = set(re.findall(r"\w+", text1))
+    words2 = set(re.findall(r"\w+", text2))
 
     if len(words1 | words2) == 0:
         return 0.0
