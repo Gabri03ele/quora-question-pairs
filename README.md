@@ -35,13 +35,14 @@ Start Jupyter from the `notebooks/` folder and run the notebooks in order. Each 
 | `01_data.ipynb`: cleaning, ground-truth groups, dev/test split | `data/raw/questions.csv`                                       | `questions.parquet`, `pairs.parquet`, 10% samples | about 1 min                                             |
 | `02_lsh.ipynb`: MinHash-LSH candidates                         | `questions.parquet`, `pairs.parquet`                           | `lsh_candidates.parquet`                          | about 6 min                                             |
 | `03_embeddings.ipynb`: embeddings and HNSW candidates          | `questions.parquet`, `pairs.parquet`, `lsh_candidates.parquet` | `embeddings.npy`, `emb_candidates.parquet`        | about 10 min to encode the first time, then about 5 min |
-| `04_graph.ipynb`: similarity graph and clustering              | both candidate files                                           | <!-- TODO -->                                     | <!-- TODO -->                                           |
+| `04_graph.ipynb`: similarity graph and clustering              | `questions.parquet`, `pairs.parquet`, both candidate files     | `p4_sweep_dev.csv` (only with `RUN_SWEEP = True`) | about 3 min; about 35 min with `RUN_SWEEP = True` (\*)  |
 
 Notes:
 
 - Notebook 03 caches the embeddings in `data/processed/embeddings.npy`. They are encoded again only if the model or the list of questions changes.
 - Notebook 02 keeps up to 27 million candidate pairs in memory.
-- All tuning uses the `dev` split. The `test` split is used once, at the end of notebooks 02 and 03, for the numbers in the report.
+- (\*) Notebook 04 was timed on a 2-core Linux machine, not the MacBook above. By default it reloads the parameter sweep from `data/processed/p4_sweep_dev.csv` (96 settings of thresholds and Louvain resolution); set `RUN_SWEEP = True` to recompute it.
+- All tuning uses the `dev` split. The `test` split is used once, at the end of notebooks 02, 03 and 04, for the numbers in the report.
 
 ### Faster check
 

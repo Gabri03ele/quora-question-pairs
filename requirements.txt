@@ -22,3 +22,5 @@ faiss-cpu
 
 # P4: graph and clustering
 networkx
+python-igraph
+psutil
