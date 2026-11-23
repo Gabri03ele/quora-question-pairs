@@ -1,70 +1,165 @@
 # Duplicate questions on Quora: MinHash-LSH, embeddings and graph clustering
 
 02807 Computational Tools for Data Science, final project, Group 22.
-Gabriele Armani, Giovanni Carpenedo, Marcelo Sànchez, Alberto Iurlo.
 
-We measure how many duplicate questions on Quora MinHash-LSH misses because they are paraphrases. We then test whether sentence embeddings with approximate nearest-neighbour search (HNSW), followed by graph clustering, recover those duplicates without comparing all pairs of questions. The method and results are in the report. Each notebook explains its own step.
+Team: Gabriele Armani, Giovanni Carpenedo, Marcelo Sànchez, Alberto Iurlo
 
-## Requirements
+In this project we measure how many duplicate questions on Quora are missed using the MinHash-LSH algorithm because they are paraphrases, and test whether sentence embeddings and graph clustering recover them. Data: Quora Question Pairs (Kaggle).
 
-- Python 3.13
-- Packages: `pip install -r requirements.txt`. Use pandas 2.x: with pandas 3, notebook 01 lower-cases a few texts differently.
-- The first run of notebook 03 downloads the embedding model from Hugging Face, so it needs internet access.
-- A GPU is used automatically when one is available (Apple MPS or NVIDIA CUDA). Otherwise the code runs on the CPU.
+## Project structure
 
-All runs were done on a MacBook with an Apple M1 chip, using MPS. <!-- TODO: add RAM, e.g. 16 GB -->
+```data/raw/ the file downloaded from Kaggle (never modified, not in git)
+data/processed/   files produced by our code, e.g. cleaned questions (not in git)
+src/              reusable code (functions shared by everyone)
+notebooks/        jupyter notebooks
+docs/             project plan and workflow PDFs
+figures/          figures for the report, produced by the notebooks
+requirements.txt  Python packages
+```
 
-```bash
-python -m venv .venv
+Rules of thumb
+
+- Raw data is never edited. If something goes wrong, delete `data/processed/` and regenerate it.
+- A function that more than one person needs goes in `src/`. Notebooks import it.
+- Each notebook has a number prefix (`01_`, `02_`, ...) and each person edits only their.
+
+## Who works where
+
+| Part                 | Code                             | Notebook                        |
+| -------------------- | -------------------------------- | ------------------------------- |
+| Data and evaluation  | `src/data.py`, `src/evaluate.py` | `notebooks/01_data.ipynb`       |
+| MinHash-LSH          | `src/minhash.py`                 | `notebooks/02_lsh.ipynb`        |
+| Embeddings and HNSW  | `src/embeddings.py`              | `notebooks/03_embeddings.ipynb` |
+| Graph and clustering | `src/graph.py`                   | `notebooks/04_graph.ipynb`      |
+
+## Setup
+
+```python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
 ## Data
 
-The dataset is the [Question Pairs Dataset](https://www.kaggle.com/datasets/quora/question-pairs-dataset) published by Quora on Kaggle. It has 404,351 labelled question pairs. To rebuild everything from scratch, download `questions.csv` and put it in `data/raw/`.
+`notebooks/01_data.ipynb` builds every file in `data/processed/` from the raw file.
 
-The processed files in `data/processed/` are already in the repository, so any step whose output is already there can be skipped. The only exception is `embeddings.npy` (825 MB, too large for GitHub): notebook 03 creates it the first time it runs, in about 10 minutes on the machine above. Nothing has to be downloaded by hand apart from `questions.csv`.
+### Files
 
-## How to run
+| File                         | Rows    | Content                              |
+| ---------------------------- | ------- | ------------------------------------ |
+| `questions.parquet`          | 537,174 | one row per distinct question        |
+| `pairs.parquet`              | 403,772 | one row per clean labelled pair      |
+| `questions_sample10.parquet` | 53,721  | 10% sample of the questions          |
+| `pairs_sample10.parquet`     | 43,417  | the labelled pairs inside the sample |
 
-Start Jupyter from the `notebooks/` folder and run the notebooks in order. Each notebook reads only files written by the ones before it. Times are for the machine above.
+### Columns
 
-| Notebook                                                       | Reads                                                          | Writes                                            | Time                                                    |
-| -------------------------------------------------------------- | -------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------------- |
-| `01_data.ipynb`: cleaning, ground-truth groups, dev/test split | `data/raw/questions.csv`                                       | `questions.parquet`, `pairs.parquet`, 10% samples | about 1 min                                             |
-| `02_lsh.ipynb`: MinHash-LSH candidates                         | `questions.parquet`, `pairs.parquet`                           | `lsh_candidates.parquet`                          | about 6 min                                             |
-| `03_embeddings.ipynb`: embeddings and HNSW candidates          | `questions.parquet`, `pairs.parquet`, `lsh_candidates.parquet` | `embeddings.npy`, `emb_candidates.parquet`        | about 10 min to encode the first time, then about 5 min |
-| `04_graph.ipynb`: similarity graph and clustering              | `questions.parquet`, `pairs.parquet`, both candidate files     | `p4_sweep_dev.csv` (only with `RUN_SWEEP = True`) | about 3 min; about 35 min with `RUN_SWEEP = True` (\*)  |
+`questions`
 
-Notes:
+- `qid`: our question id (the Kaggle ids are unreliable and not used)
+- `text_norm`: question text after light normalisation (NFKC, lower case, whitespace collapsed). Any further cleaning is done in each method.
+- `group_id`: ground-truth duplicate group. Questions with the same `group_id` are duplicates.
+- `split`: `dev` or `test`
 
-- Notebook 03 caches the embeddings in `data/processed/embeddings.npy`. They are encoded again only if the model or the list of questions changes.
-- Notebook 02 keeps up to 27 million candidate pairs in memory.
-- (\*) Notebook 04 was timed on a 2-core Linux machine, not the MacBook above. By default it reloads the parameter sweep from `data/processed/p4_sweep_dev.csv` (96 settings of thresholds and Louvain resolution); set `RUN_SWEEP = True` to recompute it.
-- All tuning uses the `dev` split. The `test` split is used once, at the end of notebooks 02, 03 and 04, for the numbers in the report.
+`pairs`
 
-### Faster check
+- `qid1`, `qid2`: the two questions, with `qid1 < qid2`
+- `conflicting_pair`: labelled 0, but both questions are in the same duplicate group
+- `split`: `dev` or `test`
+- `is_duplicate`: target label, 1 or 0
 
-To check the code without the full runtimes:
+### Rules for everyone
 
-- `questions_sample10.parquet` and `pairs_sample10.parquet` contain 10% of the questions, with the same qids and dev/test split. The first cell of the sweep in notebook 02 already runs on them.
-- Notebook 04 only reads the two candidate files in the repository, so it can be run without running 02 and 03 again.
+- Use the `split` column if split is needed, never a split of your own. Connected components of pairs are on one side, so no question is in both dev and test.
+- Tune everything on `dev`. `test` is used once, for the final numbers in the report.
+- Searches (LSH, HNSW) run over all questions, including test ones.
+- The sample is for testing code. All reported numbers come from the full data.
 
-## Repository structure
+### Loading
 
+```python
+import pandas as pd
+questions = pd.read_parquet("data/processed/questions.parquet")
+pairs = pd.read_parquet("data/processed/pairs.parquet")
+dev_pairs = pairs[pairs["split"] == "dev"]
 ```
-data/raw/         questions.csv from Kaggle (never modified)
-data/processed/   files written by the notebooks
-src/              functions used by the notebooks
-  data.py         cleaning, ground truth, dev/test split
-  evaluate.py     shared evaluation: recall, precision and F1 on labelled pairs, for candidate pairs and clusters
-  minhash.py      our MinHash signatures and LSH banding
-  embeddings.py   sentence embeddings, FAISS HNSW index, candidate search
-  graph.py        similarity graph and clustering
-notebooks/        01 to 04, run in order
+
+## Evaluation
+
+`src/evaluate.py` scores the output of any method the same way.
+
+### Candidate format
+
+Every method returns a pandas DataFrame with one row per pair it thinks may be a duplicate:
+
+| Column           | Type  | Meaning                                                       |
+| ---------------- | ----- | ------------------------------------------------------------- |
+| `qid_a`, `qid_b` | int   | the two questions (any order)                                 |
+| `score`          | float | similarity (estimated Jaccard for LSH, cosine for embeddings) |
+| `source`         | str   | `lsh` or `emb`                                                |
+
+`evaluate` only uses `qid_a` and `qid_b`. `score` and `source` are needed to build the graph. Order, repeated pairs and self-pairs are handled inside. Clusters must be turned into pairs (every two questions in the same cluster) before evaluating.
+
+### Usage
+
+```python
+import sys
+sys.path.append("..")          # only when running from notebooks/
+from src.evaluate import evaluate, recall_by_jaccard_bin
+
+results = evaluate(candidates, pairs, questions, split="dev")
+bins = recall_by_jaccard_bin(candidates, pairs, questions, split="dev")
 ```
 
-## Group contributions
+`evaluate` returns a dictionary: `n_candidates`, `fraction_of_all_pairs`, `labelled_candidates`, `recall`, `precision`, `f1`, `recall_implied`.
 
-All four members contributed equally to the project.
+- `recall`, `precision`, `f1` are computed on labelled pairs only. Precision ignores unlabelled candidates.
+- `recall_implied` counts all duplicate pairs implied by the groups, labelled or not.
+- `recall_by_jaccard_bin` gives recall for duplicates that share few or many words.
+
+Use `split="dev"` while working. `split="test"` is used once, for the final numbers.
+
+## P2: MinHash-LSH
+
+MinHash-LSH finds likely duplicate pairs without comparing every pair of questions. Each question is represented as its set of words, and each set is summarised by a signature of **96 MinHash values**. The signature is split into bands, and two questions become a candidate pair if all values in at least one band match.
+
+We compared four settings of bands and rows (6×16, 8×12, 12×8 and 16×6) on the dev split. We chose **16 bands of 6 rows** because it gave the highest F1 of the four. Lower thresholds (24×4 or 32×3) raise F1 further, but return too many candidates (a single band already gives 92 and 919 million pairs). Word pairs (q=2) gave a lower F1 than single words with the same setting (17.1% against 38.6% on dev), so we kept single words.
+
+On the **test split**, the chosen setting produced **26,906,047 candidate pairs**. That is **0.0186% of all possible pairs**. On the labelled test pairs it reached **28.6% recall** and **50.0% precision**, an **F1 of 36.4%**. Implied recall, which also counts duplicate pairs that have no label, was **18.9%**. Precision is measured only on the 17,089 candidates that have a test label, so the precision of the full candidate set is unknown.
+
+Recall depends strongly on how many words the two questions share (test split):
+
+| Word Jaccard    | 0–0.2  | 0.2–0.4  | 0.4–0.6   | 0.6–0.8   | 0.8–1.0   |
+| --------------- | ------ | -------- | --------- | --------- | --------- |
+| Duplicate pairs | 2,726  | 11,274   | 8,709     | 5,137     | 1,996     |
+| Recall          | **0%** | **1.9%** | **23.4%** | **83.6%** | **99.9%** |
+
+LSH therefore finds near-copies but misses most paraphrases. It works well as a cheap first filter, but it is not enough on its own, which is why the next stages use embeddings and graph clustering.
+
+`notebooks/02_lsh.ipynb` reproduces everything below and writes `data/processed/lsh_candidates.parquet` (columns `qid_a < qid_b`, `score` = estimated word Jaccard, `source="lsh"`) and `figures/lsh_s_curve.pdf`. Run it from `notebooks/` after `01_data.ipynb`; with 7 GB of RAM it completes in roughly 10 to 20 minutes.
+
+### Additional studies (dev split)
+
+These do not change the saved candidates, which use all words, k=96 and 16×6.
+
+| Shingles      | k   | Bands × rows | Candidates | Recall | Precision | F1    |
+| ------------- | --- | ------------ | ---------- | ------ | --------- | ----- |
+| Words (saved) | 96  | 16×6         | 26,906,047 | 30.6%  | 52.2%     | 38.6% |
+| Words         | 48  | 8×6          | 15,759,082 | 23.5%  | 51.2%     | 32.2% |
+| Words         | 192 | 32×6         | 48,982,984 | 39.7%  | 53.0%     | 45.4% |
+| No stop words | 96  | 16×6         | 2,103,312  | 38.1%  | 55.6%     | 45.3% |
+| Char 3-grams  | 96  | 16×6         | 7,137,902  | 29.9%  | 54.7%     | 38.7% |
+| Char 4-grams  | 96  | 16×6         | 3,834,075  | 22.2%  | 53.1%     | 31.3% |
+
+- **Short questions:** 7,599 questions (1.4%) have fewer than 4 words or 20 characters. Adding the character-trigram collisions that involve one of them raises F1 from 36.9% to 42.3% on the labelled pairs with a short question, but only from 38.6% to 38.7% overall.
+- **Seeds:** over five seeds F1 is 39.4% ± 0.6%. Seed 42, fixed beforehand, is the lowest.
+
+### Validation and runtime
+
+- **datasketch** (check only): on 1,000 dev pairs, 200 per Jaccard bin, the mean absolute error is 0.033 for our MinHash and 0.031 for datasketch.
+- **S-curve:** for 16×6 the share of pairs found is within 0.021 of `1 - (1 - s^r)^b` in all 20 Jaccard bins.
+- **Runtime:** signatures take 17 s and candidates 27 s. Exact Jaccard on all pairs would take about 34 minutes (extrapolated from 1,000 questions), 47 times longer.
+
+### P3 — Embeddings + HNSW
+
+Encodes every normalised question with the sentence-transformers model `all-MiniLM-L6-v2` (384-dim, L2-normalised, cached in `data/processed/embeddings.npy`, not tracked by git) and indexes them with a FAISS HNSW index (M=32, inner product = cosine similarity). Each question retrieves its top-20 neighbours. `efSearch=64` was chosen by comparing against exact search on 2,000 random queries. The similarity threshold (0.75) was chosen by best F1 on the **dev** split. Output: `data/processed/emb_candidates.parquet` (~1.42M pairs, columns `qid_a < qid_b`, `score`, `source="emb"`). On the **test** split it reaches recall 0.81, precision 0.63, F1 0.71 (LSH: 0.29 / 0.50 / 0.36), and it recovers duplicates with low word overlap that LSH misses.
