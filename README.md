@@ -8,11 +8,10 @@ In this project we measure how many duplicate questions on Quora are missed usin
 
 ## Project structure
 
-```data/raw/ the file downloaded from Kaggle (never modified, not in git)
-data/processed/   files produced by our code, e.g. cleaned questions (not in git)
+```data/raw/ the file downloaded from Kaggle (never modified)
+data/processed/   files produced by our code, e.g. cleaned questions
 src/              reusable code (functions shared by everyone)
 notebooks/        jupyter notebooks
-docs/             project plan and workflow PDFs
 figures/          figures for the report, produced by the notebooks
 requirements.txt  Python packages
 ```
