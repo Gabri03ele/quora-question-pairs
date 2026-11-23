@@ -13,6 +13,7 @@ data/processed/   files produced by our code, e.g. cleaned questions (not in git
 src/              reusable code (functions shared by everyone)
 notebooks/        jupyter notebooks
 docs/             project plan and workflow PDFs
+figures/          figures for the report, produced by the notebooks
 requirements.txt  Python packages
 ```
 
@@ -124,7 +125,7 @@ Use `split="dev"` while working. `split="test"` is used once, for the final numb
 
 MinHash-LSH finds likely duplicate pairs without comparing every pair of questions. Each question is represented as its set of words, and each set is summarised by a signature of **96 MinHash values**. The signature is split into bands, and two questions become a candidate pair if all values in at least one band match.
 
-We compared four settings of bands and rows (6×16, 8×12, 12×8 and 16×6) on the dev split. We chose **16 bands of 6 rows** because it gave the highest F1. Word pairs (q=2) gave a lower F1 than single words with the same setting (17.1% against 38.6% on dev), so we kept single words.
+We compared four settings of bands and rows (6×16, 8×12, 12×8 and 16×6) on the dev split. We chose **16 bands of 6 rows** because it gave the highest F1 of the four. Lower thresholds (24×4 or 32×3) raise F1 further, but return too many candidates (a single band already gives 92 and 919 million pairs). Word pairs (q=2) gave a lower F1 than single words with the same setting (17.1% against 38.6% on dev), so we kept single words.
 
 On the **test split**, the chosen setting produced **26,906,047 candidate pairs**. That is **0.0186% of all possible pairs**. On the labelled test pairs it reached **28.6% recall** and **50.0% precision**, an **F1 of 36.4%**. Implied recall, which also counts duplicate pairs that have no label, was **18.9%**. Precision is measured only on the 17,089 candidates that have a test label, so the precision of the full candidate set is unknown.
 
@@ -136,6 +137,30 @@ Recall depends strongly on how many words the two questions share (test split):
 | Recall          | **0%** | **1.9%** | **23.4%** | **83.6%** | **99.9%** |
 
 LSH therefore finds near-copies but misses most paraphrases. It works well as a cheap first filter, but it is not enough on its own, which is why the next stages use embeddings and graph clustering.
+
+`notebooks/02_lsh.ipynb` reproduces everything below and writes `data/processed/lsh_candidates.parquet` (columns `qid_a < qid_b`, `score` = estimated word Jaccard, `source="lsh"`) and `figures/lsh_s_curve.pdf`. Run it from `notebooks/` after `01_data.ipynb`; with 7 GB of RAM it completes in roughly 10 to 20 minutes.
+
+### Additional studies (dev split)
+
+These do not change the saved candidates, which use all words, k=96 and 16×6.
+
+| Shingles      | k   | Bands × rows | Candidates | Recall | Precision | F1    |
+| ------------- | --- | ------------ | ---------- | ------ | --------- | ----- |
+| Words (saved) | 96  | 16×6         | 26,906,047 | 30.6%  | 52.2%     | 38.6% |
+| Words         | 48  | 8×6          | 15,759,082 | 23.5%  | 51.2%     | 32.2% |
+| Words         | 192 | 32×6         | 48,982,984 | 39.7%  | 53.0%     | 45.4% |
+| No stop words | 96  | 16×6         | 2,103,312  | 38.1%  | 55.6%     | 45.3% |
+| Char 3-grams  | 96  | 16×6         | 7,137,902  | 29.9%  | 54.7%     | 38.7% |
+| Char 4-grams  | 96  | 16×6         | 3,834,075  | 22.2%  | 53.1%     | 31.3% |
+
+- **Short questions:** 7,599 questions (1.4%) have fewer than 4 words or 20 characters. Adding the character-trigram collisions that involve one of them raises F1 from 36.9% to 42.3% on the labelled pairs with a short question, but only from 38.6% to 38.7% overall.
+- **Seeds:** over five seeds F1 is 39.4% ± 0.6%. Seed 42, fixed beforehand, is the lowest.
+
+### Validation and runtime
+
+- **datasketch** (check only): on 1,000 dev pairs, 200 per Jaccard bin, the mean absolute error is 0.033 for our MinHash and 0.031 for datasketch.
+- **S-curve:** for 16×6 the share of pairs found is within 0.021 of `1 - (1 - s^r)^b` in all 20 Jaccard bins.
+- **Runtime:** signatures take 17 s and candidates 27 s. Exact Jaccard on all pairs would take about 34 minutes (extrapolated from 1,000 questions), 47 times longer.
 
 ### P3 — Embeddings + HNSW
 

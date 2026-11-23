@@ -7,11 +7,11 @@ matplotlib
 jupyter
 
 # P2: MinHash-LSH (validation only)
-# datasketch
+datasketch
 
 # P3: embeddings and HNSW
 sentence-transformers
 faiss-cpu
 
 # P4: graph and clustering
-# networkx
+networkx
