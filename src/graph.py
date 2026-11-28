@@ -1,6 +1,5 @@
-"""Similarity graph and clustering (owner: P4).
-
-Turns the candidate pairs of LSH (P2) and embeddings (P3) into one weighted graph,
+"""
+Turns the candidate pairs of LSH (notebook 02_lsh) and embeddings (notebook 03_embeddings) into one weighted graph,
 splits it into duplicate clusters (connected components or Louvain) and scores the
 clusters with the same metrics as src/evaluate.py, without listing every pair.
 
@@ -155,7 +154,7 @@ def _pairs_in_clusters(sizes):
 def evaluate_clusters(labels, pairs, questions, split="dev"):
     """Score a clustering as if every two questions in the same cluster were a candidate pair.
 
-    The metrics come from P1's shared evaluate.evaluate_clusters, so every system in the
+    The metrics come from the shared evaluate_clusters in src/evaluate.py, so every system in the
     project is scored by the same code. On top of them this adds precision_implied:
     the share of ALL predicted pairs that lie inside a true group. Labelled precision ignores
     unlabelled pairs, so it cannot see a giant cluster; this one can. It is a lower bound

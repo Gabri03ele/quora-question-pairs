@@ -3,7 +3,7 @@
 # slightly different texts with it, so stay on pandas 2.
 # For exact versions: pip freeze > requirements-lock.txt in a working environment.
 
-# P1: data and evaluation
+# 01: data and evaluation
 pandas>=2.2,<3
 numpy
 pyarrow
@@ -12,15 +12,15 @@ matplotlib
 jupyter
 scikit-learn
 
-# P2: MinHash-LSH (datasketch only to validate our MinHash)
+# 02: MinHash-LSH (datasketch only to validate our MinHash)
 datasketch
 
-# P3: embeddings and HNSW
+# 03: embeddings and HNSW
 sentence-transformers
 torch
 faiss-cpu
 
-# P4: graph and clustering
+# 04: graph and clustering
 networkx
 python-igraph
 psutil

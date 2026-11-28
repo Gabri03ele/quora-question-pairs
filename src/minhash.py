@@ -1,4 +1,4 @@
-"""MinHash signatures, LSH candidate generation and the P2 validation studies."""
+"""MinHash signatures, LSH candidate generation and validation studies."""
 
 import re # Regular expressions
 import time
@@ -13,7 +13,7 @@ _PANDAS_HASH_KEY = "0123456789123456"
 
 
 def tokenize(text):
-    """Return lowercase word tokens (same definition as P1's Jaccard)."""
+    """Return lowercase word tokens (same definition as word_jaccard in src/evaluate.py)."""
     return _TOKEN_RE.findall(str(text).lower())
 
 

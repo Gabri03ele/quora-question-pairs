@@ -1,5 +1,4 @@
-"""Data loading and cleaning (owner: P1).
-
+"""
 Functions used by notebooks/01_data.ipynb to build questions.parquet and pairs.parquet
 from the raw Kaggle file. The notebook shows the outputs and explains each step.
 """

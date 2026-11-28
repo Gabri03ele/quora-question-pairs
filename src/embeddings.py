@@ -1,4 +1,4 @@
-"""Sentence embeddings and HNSW candidate generation (owner: P3)."""
+"""Sentence embeddings and HNSW candidate generation"""
 
 import os
 import time
